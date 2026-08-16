@@ -17,6 +17,7 @@
 
 - **私聊按用户**:每个飞书用户自动绑定一个独立 DSH 会话,上下文连续互不干扰
 - **群聊按 @**:群里只有 @机器人 才响应,回复发回群里
+- **流式输出**:Agent 回复以 cardkit 打字机卡片逐字上屏(cardkit 权限缺失时自动降级为普通回复)
 - **审批转发**:Agent 请求权限时飞书收到确认文本,回复「同意/拒绝」即可
 - **提问转发**:Agent 提问时按序号/选项格式回复
 - **断线重连**:飞书长连接与 DSH 事件流均自动重连
@@ -75,6 +76,7 @@ DSH_SESSION_CWD=D:\workspace        # Agent 会话的工作目录
    - `im:message.p2p_msg:readonly` — 读取用户发给机器人的单聊消息
    - `im:message.group_msg:readonly` — 获取群组中所有消息
    - `im:message:send_as_bot` — 以应用的身份发消息
+   - `cardkit:card:write` — 流式卡片(可选,缺失时回复自动降级为非流式)
 5. 「事件与回调」→「事件订阅」→ 请求方式选 **使用长连接接收事件**(WebSocket,无需公网 URL)→ 添加事件 **`接收消息 im.message.receive_v1`**。
 6. 「版本管理与发布」→「创建版本」→「申请发布」。企业内自建应用通常即时生效;若企业开启审核需管理员通过。
 7. 使用方式:
@@ -87,7 +89,8 @@ DSH_SESSION_CWD=D:\workspace        # Agent 会话的工作目录
 
 - **`/stop`**:取消当前会话正在进行的任务
 - 绑定关系持久化在 `state/mapping.json`(删除该文件可重置绑定)
-- 回复按 `REPLY_CHUNK_CHARS`(默认 3500 字符)分片,首片以回复形式回在原消息下
+- **流式输出**(默认开启):`STREAMING=false` 可关闭;`STREAM_UPDATE_INTERVAL_MS` 控制卡片刷新节流(默认 500ms)
+- 非流式回复按 `REPLY_CHUNK_CHARS`(默认 3500 字符)分片,首片以回复形式回在原消息下
 - 暂不支持图片/文件/富文本消息(会提示仅支持文本)
 
 ## 自测脚本

@@ -6,9 +6,11 @@ import { SessionMap } from './session-map.js'
 import {
   APPROVAL_NO,
   APPROVAL_YES,
+  buildStreamCardJson,
   chunkText,
   parseQuestionAnswer,
   parseTextContent,
+  streamTextDelta,
   stripMentionTokens,
   textOfAssistantMessage,
 } from './util.js'
@@ -25,6 +27,16 @@ export class Bridge {
     this.seenEvents = new Map() // event_id -> timestamp (dedup)
     this.token = null
     this.tokenExpiresAt = 0
+    this.streams = new Map() // sessionId -> open cardkit stream state
+    this.streamQueues = new Map() // sessionId -> serialized stream-operation chain
+  }
+
+  /** Serialize per-session stream operations so concurrent chunks cannot race. */
+  enqueue(sessionId, fn) {
+    const prev = this.streamQueues.get(sessionId) ?? Promise.resolve()
+    const next = prev.then(fn, fn)
+    this.streamQueues.set(sessionId, next.catch(() => {}))
+    return next
   }
 
   async start() {
@@ -185,7 +197,9 @@ export class Bridge {
       }
 
       this.map.setLastMessageId(sessionId, message.message_id)
-      await this.sendText(chat, '收到,正在处理…', { replyTo: message.message_id })
+      if (!this.config.streaming) {
+        await this.sendText(chat, '收到,正在处理…', { replyTo: message.message_id })
+      }
 
       const accepted = await this.dsh.call('session.prompt', {
         sessionId,
@@ -265,21 +279,150 @@ export class Bridge {
     const sessionId = payload.sessionId
     const event = payload.event
     if (!event) return
-    if (event.type === 'assistant/message') {
-      const text = textOfAssistantMessage(event.data)
-      if (!text) return
-      void this.deliverReply(sessionId, text)
+    switch (event.type) {
+      case 'assistant/chunk':
+        this.handleChunk(sessionId, event.data)
+        break
+      case 'assistant/message': {
+        const text = textOfAssistantMessage(event.data)
+        if (text) void this.deliverReply(sessionId, text)
+        break
+      }
+      case 'turn/end':
+        void this.closeOpenStream(sessionId)
+        break
+      default:
+        break
     }
+  }
+
+  handleChunk(sessionId, data) {
+    if (!this.config.streaming) return
+    const delta = streamTextDelta(data?.chunk)
+    if (!delta) return
+    void this.pushStream(sessionId, delta)
   }
 
   async deliverReply(sessionId, text) {
     try {
       const chat = this.map.chatFor(sessionId)
       if (!chat) return
-      await this.sendText(chat, text, { replyTo: this.map.lastMessageId(sessionId) })
+      if (this.streams.has(sessionId)) {
+        await this.closeStream(sessionId, text)
+      } else {
+        await this.sendText(chat, text, { replyTo: this.map.lastMessageId(sessionId) })
+      }
     } catch (err) {
       this.log(`deliverReply failed: ${err.message}`)
     }
+  }
+
+  // ------------------------------------------------------- cardkit streaming
+
+  pushStream(sessionId, delta) {
+    void this.enqueue(sessionId, async () => {
+      let stream = this.streams.get(sessionId)
+      if (!stream) {
+        const chat = this.map.chatFor(sessionId)
+        if (!chat) return
+        await this.openStream(sessionId, chat, delta)
+        return // initial delta already consumed as the card's first content
+      }
+      stream.text += delta
+      if (stream.timer) return // a flush is already pending
+      stream.timer = setTimeout(() => {
+        stream.timer = null
+        void this.flushStream(sessionId)
+      }, this.config.streamUpdateIntervalMs)
+    })
+  }
+
+  async openStream(sessionId, chat, initialText) {
+    const elementId = 'md_1'
+    try {
+      const cardJson = buildStreamCardJson({ content: initialText, elementId })
+      const token = await this.getTenantToken()
+      const res = await fetch('https://open.feishu.cn/open-apis/cardkit/v1/cards', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'card_json', data: JSON.stringify(cardJson) }),
+      })
+      const json = await res.json()
+      if (json.code !== 0) throw new Error(`cardkit create ${json.code}: ${json.msg}`)
+      const cardId = json.data.card_id
+      await this.feishu.im.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: {
+          receive_id: chat.chatId,
+          msg_type: 'interactive',
+          content: JSON.stringify({ type: 'card', data: { card_id: cardId } }),
+        },
+      })
+      this.streams.set(sessionId, { cardId, elementId, sequence: 1, text: initialText, timer: null })
+      this.log(`stream opened (card ${cardId.slice(0, 8)}…)`)
+    } catch (err) {
+      // cardkit unavailable (permission/rate limit) — fall back to plain replies
+      this.streams.delete(sessionId)
+      this.log(`stream open failed (falling back to plain replies): ${err.message}`)
+      const chat = this.map.chatFor(sessionId)
+      if (chat) await this.sendText(chat, '收到,正在处理…', { replyTo: this.map.lastMessageId(sessionId) })
+    }
+  }
+
+  async flushStream(sessionId) {
+    const stream = this.streams.get(sessionId)
+    if (!stream) return
+    try {
+      const token = await this.getTenantToken()
+      const res = await fetch(
+        `https://open.feishu.cn/open-apis/cardkit/v1/cards/${stream.cardId}/elements/${stream.elementId}/content`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: stream.text.slice(0, 20000), sequence: stream.sequence++ }),
+        },
+      )
+      const json = await res.json()
+      if (json.code !== 0) throw new Error(`cardkit update ${json.code}: ${json.msg}`)
+    } catch (err) {
+      this.log(`stream update failed: ${err.message}`)
+    }
+  }
+
+  closeStream(sessionId, finalText) {
+    return this.enqueue(sessionId, async () => {
+      const stream = this.streams.get(sessionId)
+      if (!stream) return
+      if (stream.timer) {
+        clearTimeout(stream.timer)
+        stream.timer = null
+      }
+      stream.text = finalText
+      await this.flushStream(sessionId)
+      try {
+        const token = await this.getTenantToken()
+        const settings = JSON.stringify({
+          config: { streaming_mode: false, summary: { content: finalText.slice(0, 100) } },
+        })
+        const res = await fetch(`https://open.feishu.cn/open-apis/cardkit/v1/cards/${stream.cardId}/settings`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings, sequence: stream.sequence++ }),
+        })
+        const json = await res.json()
+        if (json.code !== 0) throw new Error(`cardkit close ${json.code}: ${json.msg}`)
+        this.log(`stream closed (${finalText.length} chars)`)
+      } catch (err) {
+        this.log(`stream close failed: ${err.message}`)
+      }
+      this.streams.delete(sessionId)
+    })
+  }
+
+  closeOpenStream(sessionId) {
+    const stream = this.streams.get(sessionId)
+    if (!stream) return Promise.resolve()
+    return this.closeStream(sessionId, stream.text)
   }
 
   handleApprovalRequested(rpcId, payload) {

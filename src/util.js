@@ -47,6 +47,33 @@ export function stripMentionTokens(text) {
   return text.replace(/@_user_\d+/g, '').replace(/\s+/g, ' ').trim()
 }
 
+/** Appendable text of one StreamChunk ('' for non-text deltas). */
+export function streamTextDelta(chunk) {
+  return chunk?.type === 'text-delta' && typeof chunk.text === 'string' ? chunk.text : ''
+}
+
+/**
+ * Card JSON for a Feishu cardkit streaming card (typewriter effect). The card
+ * is created via POST /open-apis/cardkit/v1/cards, sent with msg_type
+ * 'interactive', updated via PUT .../cards/:card_id/elements/:element_id/content,
+ * and closed via PUT .../cards/:card_id/settings.
+ */
+export function buildStreamCardJson({ title = '🤖 DSH 回复', content = '', elementId = 'md_1' } = {}) {
+  return {
+    schema: '2.0',
+    header: { title: { tag: 'plain_text', content: title } },
+    config: {
+      streaming_mode: true,
+      summary: { content: '' },
+      streaming_config: {
+        print_frequency_ms: { default: 50, android: 50, ios: 50, pc: 50 },
+        print_step: { default: 2, android: 2, ios: 2, pc: 2 },
+      },
+    },
+    body: { elements: [{ tag: 'markdown', content, element_id: elementId }] },
+  }
+}
+
 /** One question answer from a Feishu reply: exact option label, option number, or custom text. */
 export function answerFor(item, value) {
   const options = item.options ?? []

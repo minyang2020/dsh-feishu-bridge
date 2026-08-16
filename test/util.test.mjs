@@ -4,9 +4,11 @@ import {
   APPROVAL_NO,
   APPROVAL_YES,
   answerFor,
+  buildStreamCardJson,
   chunkText,
   parseQuestionAnswer,
   parseTextContent,
+  streamTextDelta,
   stripMentionTokens,
   textOfAssistantMessage,
 } from '../src/util.js'
@@ -94,4 +96,24 @@ test('parseQuestionAnswer falls back to whole-text answer for a single question'
     answers: [{ id: 'q1', selected: [], custom: '直接回复' }],
   })
   assert.equal(parseQuestionAnswer('', []), null)
+})
+
+test('streamTextDelta extracts only text deltas', () => {
+  assert.equal(streamTextDelta({ type: 'text-delta', index: 0, text: '你好' }), '你好')
+  assert.equal(streamTextDelta({ type: 'text-delta', index: 0, text: '' }), '')
+  assert.equal(streamTextDelta({ type: 'block-start', index: 0, blockType: 'text' }), '')
+  assert.equal(streamTextDelta({ type: 'tool-call-delta', index: 0, id: 'x', argumentsDelta: '{}' }), '')
+  assert.equal(streamTextDelta({ type: 'finish', reason: 'stop' }), '')
+  assert.equal(streamTextDelta(undefined), '')
+})
+
+test('buildStreamCardJson produces a streaming cardkit card', () => {
+  const card = buildStreamCardJson({ title: 'T', content: 'hi', elementId: 'md_9' })
+  assert.equal(card.schema, '2.0')
+  assert.equal(card.header.title.content, 'T')
+  assert.equal(card.config.streaming_mode, true)
+  assert.equal(card.config.streaming_config.print_step.default, 2)
+  assert.equal(card.body.elements[0].tag, 'markdown')
+  assert.equal(card.body.elements[0].content, 'hi')
+  assert.equal(card.body.elements[0].element_id, 'md_9')
 })

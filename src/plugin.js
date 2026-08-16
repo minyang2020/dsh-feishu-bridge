@@ -33,6 +33,10 @@ export const Config = z.object({
   sessionCwd: z.string().default(''),
   /** Reply chunk size in characters. */
   replyChunkChars: z.natural().default(3500),
+  /** Stream agent replies as a cardkit typewriter card (falls back when unavailable). */
+  streaming: z.boolean().default(true),
+  /** Card content update throttle in milliseconds. */
+  streamUpdateIntervalMs: z.natural().default(500),
   /** Bridge log level: fatal | error | warn | info | debug | trace. */
   logLevel: z.string().default('info'),
 })
@@ -52,6 +56,8 @@ export function apply(ctx, config = {}) {
     DSH_BASE_URL: config.dshBaseUrl,
     DSH_SESSION_CWD: config.sessionCwd || '',
     REPLY_CHUNK_CHARS: String(config.replyChunkChars),
+    STREAMING: config.streaming ? 'true' : 'false',
+    STREAM_UPDATE_INTERVAL_MS: String(config.streamUpdateIntervalMs),
     LOG_LEVEL: config.logLevel,
   }
   const child = spawn(process.execPath, [entry], { env, stdio: 'inherit' })

@@ -17,6 +17,7 @@ Feishu group / DM <── im.message.reply/create <── mux WS (session/event)
 
 - **Per-user private chat**: each Feishu user is bound to its own DSH session with continuous context
 - **Group @-mention mode**: the bot only responds when mentioned; replies land in the group
+- **Streaming output**: agent replies stream into a cardkit typewriter card (falls back to plain replies when the cardkit permission is missing)
 - **Approval forwarding**: when the agent requests a permission, the confirmation appears in Feishu — reply 「同意/拒绝」(approve/reject)
 - **Question forwarding**: when the agent asks, answer by number/option
 - **Auto-reconnect** for both the Feishu long connection and the DSH event stream
@@ -80,6 +81,7 @@ then configure in the profile's `cordis.patch.yml`:
    - `im:message.p2p_msg:readonly` — read user messages sent to the bot
    - `im:message.group_msg:readonly` — read group messages
    - `im:message:send_as_bot` — send messages as the app
+   - `cardkit:card:write` — streaming cards (optional; replies fall back to plain messages when missing)
 5. In 「Events & Callbacks」→ event subscription, choose **receive events via long connection** (WebSocket, no public URL needed) and add the event **`im.message.receive_v1`**.
 6. In 「Version Management & Release」, create a version and **publish** it. Permission/event changes only take effect after publishing.
 7. Usage:
@@ -92,7 +94,8 @@ then configure in the profile's `cordis.patch.yml`:
 
 - `/stop` — cancel the current task of the session
 - Bindings persist in `state/mapping.json` (delete the file to reset)
-- Long replies are chunked by `REPLY_CHUNK_CHARS` (default 3500); the first chunk is sent as a thread reply
+- **Streaming** (on by default): set `STREAMING=false` to disable; `STREAM_UPDATE_INTERVAL_MS` controls the card refresh throttle (default 500ms)
+- Non-streaming replies are chunked by `REPLY_CHUNK_CHARS` (default 3500); the first chunk is sent as a thread reply
 - Image/file/rich-text messages are not supported yet (a hint is returned)
 
 ## Self-test scripts

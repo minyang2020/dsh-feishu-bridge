@@ -37,6 +37,10 @@ export function loadConfig() {
     stateDir: path.join(rootDir, 'state'),
     /** Reply chunk size in characters (Feishu text messages are size-bounded). */
     replyChunkChars: Number(process.env.REPLY_CHUNK_CHARS || 3500),
+    /** Stream agent replies as a cardkit typewriter card (falls back to plain replies when cardkit is unavailable). */
+    streaming: (process.env.STREAMING ?? 'true') !== 'false',
+    /** Card content update throttle in milliseconds. */
+    streamUpdateIntervalMs: Number(process.env.STREAM_UPDATE_INTERVAL_MS || 500),
     logLevel: process.env.LOG_LEVEL || 'info',
   }
 }
