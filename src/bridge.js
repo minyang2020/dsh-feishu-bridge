@@ -3,47 +3,15 @@
  * mux events back to Feishu, including approval/question forwarding.
  */
 import { SessionMap } from './session-map.js'
-
-const APPROVAL_YES = /^(同意|允许|批准|approve|yes|ok|y|1)\s*$/i
-const APPROVAL_NO = /^(拒绝|不同意|拒绝批准|deny|reject|no|n|0)\s*$/i
-
-function chunkText(text, maxChars) {
-  if (text.length <= maxChars) return [text]
-  const chunks = []
-  let rest = text
-  while (rest.length > maxChars) {
-    let cut = maxChars
-    const space = rest.lastIndexOf(' ', maxChars)
-    if (space > maxChars * 0.6) cut = space
-    chunks.push(rest.slice(0, cut).trim())
-    rest = rest.slice(cut).trim()
-  }
-  if (rest) chunks.push(rest)
-  return chunks
-}
-
-function textOfAssistantMessage(eventData) {
-  const blocks = eventData?.message?.content
-  if (!Array.isArray(blocks)) return ''
-  return blocks
-    .filter(block => block?.type === 'text' && typeof block.text === 'string')
-    .map(block => block.text)
-    .join('')
-    .trim()
-}
-
-function parseTextContent(message) {
-  try {
-    const parsed = JSON.parse(message.content)
-    return typeof parsed.text === 'string' ? parsed.text : ''
-  } catch {
-    return ''
-  }
-}
-
-function stripMentionTokens(text) {
-  return text.replace(/@_user_\d+/g, '').replace(/\s+/g, ' ').trim()
-}
+import {
+  APPROVAL_NO,
+  APPROVAL_YES,
+  chunkText,
+  parseQuestionAnswer,
+  parseTextContent,
+  stripMentionTokens,
+  textOfAssistantMessage,
+} from './util.js'
 
 export class Bridge {
   constructor({ config, dsh, feishu, log }) {
@@ -253,7 +221,7 @@ export class Bridge {
       return
     }
     if (pending.kind === 'question') {
-      const answer = this.parseQuestionAnswer(text, pending.questions)
+      const answer = parseQuestionAnswer(text, pending.questions)
       if (answer) {
         await this.dsh.respond(pending.rpcId, {
           sessionId: pending.sessionId,
@@ -271,50 +239,6 @@ export class Bridge {
     const record = this.map.chatFor(sessionId)
     if (record) return SessionMap.chatKey(record.kind, record.chatId)
     return SessionMap.chatKey(chat.kind, chat.chatId)
-  }
-
-  parseQuestionAnswer(text, questions) {
-    if (!Array.isArray(questions) || questions.length === 0) return null
-    const answers = []
-    let matched = false
-    // Format "1: text" / "1: text; 2: text" per line or semicolon-separated.
-    const lines = text.split(/[;\n]/).map(line => line.trim()).filter(Boolean)
-    const byNumber = []
-    for (const line of lines) {
-      const m = line.match(/^(\d+)\s*[:：]\s*(.+)$/)
-      if (m) byNumber.push({ index: Number(m[1]) - 1, value: m[2] })
-    }
-    if (byNumber.length > 0) {
-      for (const { index, value } of byNumber) {
-        const item = questions[index]
-        if (!item) continue
-        matched = true
-        answers.push(this.answerFor(item, value))
-      }
-    } else {
-      // Fallback: single question, whole text is the answer.
-      const item = questions[0]
-      if (questions.length === 1) {
-        matched = true
-        answers.push(this.answerFor(item, text))
-      }
-    }
-    return matched ? { answers } : null
-  }
-
-  answerFor(item, value) {
-    const options = item.options ?? []
-    const trimmed = value.trim()
-    const exact = options.findIndex(opt => opt.label === trimmed)
-    if (exact !== -1) {
-      return { id: item.id, selected: [options[exact].label] }
-    }
-    const numbered = trimmed.match(/^(\d+)$/)
-    if (numbered) {
-      const at = Number(numbered[1]) - 1
-      if (options[at]) return { id: item.id, selected: [options[at].label] }
-    }
-    return { id: item.id, selected: [], custom: trimmed }
   }
 
   // ---------------------------------------------------------------- DSH -> Feishu

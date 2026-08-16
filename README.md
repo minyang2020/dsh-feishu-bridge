@@ -1,4 +1,8 @@
-# dsh-feishu-bridge
+# feishu-dsh-bridge
+
+> [中文](README.md) | [English](README.en.md)
+
+[![CI](https://github.com/minyang2020/dsh-feishu-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/minyang2020/dsh-feishu-bridge/actions/workflows/ci.yml)
 
 在飞书(Lark)里直接和你的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Agent 对话的双向桥接器。
 
@@ -27,12 +31,31 @@
 ## 快速开始
 
 ```powershell
-git clone https://github.com/<you>/dsh-feishu-bridge.git
+git clone https://github.com/minyang2020/dsh-feishu-bridge.git
 cd dsh-feishu-bridge
 npm install
 copy .env.example .env      # 填入飞书 App ID / App Secret
 npm start
 ```
+
+### 作为 dsh bundle 插件安装
+
+```powershell
+dsh plugin --profile <名字> add feishu-dsh-bridge
+```
+
+然后在 profile 的 `cordis.patch.yml` 里配置:
+
+```yaml
+- id: feishu-dsh-bridge
+  config:
+    appId: cli_xxxxxxxxxxxxxxxx
+    appSecret: your_app_secret
+    dshBaseUrl: http://127.0.0.1:3200
+    sessionCwd: D:\workspace
+```
+
+> 注:GitHub 仓库名为 `dsh-feishu-bridge`,npm 包名为 `feishu-dsh-bridge`(npm 原名已被占用);两者是同一项目。
 
 配置文件 `.env`:
 
@@ -71,9 +94,12 @@ DSH_SESSION_CWD=D:\workspace        # Agent 会话的工作目录
 
 | 脚本 | 用途 | 需要飞书凭据 |
 |---|---|---|
+| `npm test` | 单元测试 + 语法检查(无需网络) | 否 |
 | `npm run smoke:dsh` | 验证 DSH RPC + 事件流(建会话→提问→收回复) | 否 |
 | `npm run test:feishu-ws` | 验证飞书长连接可建立 | 是 |
 | `npm run test:roundtrip` | 全链路回环(建群→合成入站→Agent 回复→真实出站) | 是 |
+
+> CI(每次 push/PR)运行单元测试和语法检查;DSH/飞书端到端脚本需要真实环境,在本地跑。
 
 ## 安全说明
 

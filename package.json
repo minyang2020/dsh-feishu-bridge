@@ -1,5 +1,5 @@
 {
-  "name": "dsh-feishu-bridge",
+  "name": "feishu-dsh-bridge",
   "version": "0.1.0",
   "description": "Bidirectional bridge: chat with your DeepSeek Harness agent from Feishu (Lark) — long-connection bot, per-user sessions, approval/question forwarding",
   "keywords": [
@@ -15,7 +15,7 @@
   "author": "minyang",
   "repository": {
     "type": "git",
-    "url": "https://github.com/minyang2020/dsh-feishu-bridge.git"
+    "url": "git+https://github.com/minyang2020/dsh-feishu-bridge.git"
   },
   "type": "module",
   "main": "src/plugin.js",
@@ -24,6 +24,9 @@
   },
   "scripts": {
     "start": "node src/main.js",
+    "test:unit": "node --test",
+    "test:syntax": "node --check src/main.js && node --check src/plugin.js && node --check src/bridge.js && node --check src/config.js && node --check src/dsh-client.js && node --check src/session-map.js && node --check src/util.js",
+    "test": "npm run test:unit && npm run test:syntax",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
     "test:feishu-ws": "node scripts/test-feishu-ws.mjs",
     "test:roundtrip": "node scripts/test-roundtrip.mjs"
@@ -42,6 +45,7 @@
     "scripts",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     ".env.example"
   ]
 }

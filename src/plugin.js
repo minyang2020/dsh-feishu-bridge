@@ -6,7 +6,7 @@
  * Install: dsh plugin --profile <name> add github:<you>/dsh-feishu-bridge
  * Configure in the profile's cordis.patch.yml:
  *
- *   - id: dsh-feishu-bridge
+ *   - id: feishu-dsh-bridge
  *     config:
  *       appId: cli_xxx
  *       appSecret: xxx
@@ -18,7 +18,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from '@deepseek-ai/schemastery'
 
-export const name = 'dsh-feishu-bridge'
+export const name = 'feishu-dsh-bridge'
 
 export const Config = z.object({
   /** Set false to load the plugin without starting the bridge. */
@@ -40,7 +40,7 @@ export const Config = z.object({
 export function apply(ctx, config = {}) {
   if (config.enabled === false) return
   if (!config.appId || !config.appSecret) {
-    ctx.logger?.warn?.('[dsh-feishu-bridge] appId/appSecret not configured; bridge not started. '
+    ctx.logger?.warn?.('[feishu-dsh-bridge] appId/appSecret not configured; bridge not started. '
       + 'Set config.appId/config.appSecret in the profile cordis.patch.yml.')
     return
   }
@@ -56,9 +56,9 @@ export function apply(ctx, config = {}) {
   }
   const child = spawn(process.execPath, [entry], { env, stdio: 'inherit' })
   child.on('exit', (code, signal) => {
-    ctx.logger?.warn?.(`[dsh-feishu-bridge] bridge exited (code=${code} signal=${signal ?? ''}); host continues.`)
+    ctx.logger?.warn?.(`[feishu-dsh-bridge] bridge exited (code=${code} signal=${signal ?? ''}); host continues.`)
   })
   ctx.effect(() => () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
-  }, 'dsh-feishu-bridge.child')
+  }, 'feishu-dsh-bridge.child')
 }
